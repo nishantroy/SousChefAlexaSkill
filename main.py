@@ -1,12 +1,13 @@
 from datetime import datetime
+import os
 from firebase import firebase
 import requests
-from recipe import Recipe
 
 firebase_url = "https://souschef-182502.firebaseio.com"
 souschef_url = "https://souschef-182502.appspot.com"
+firebase_secret = os.environ["FIREBASE_SECRET"]
 
-fb = firebase.FirebaseApplication(firebase_url)
+fb = firebase.FirebaseApplication(firebase_url, firebase.FirebaseAuthentication(firebase_secret, ''))
 
 
 # --------------- Helpers that build all of the responses ----------------------
