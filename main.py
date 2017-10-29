@@ -20,8 +20,8 @@ def build_speechlet_response(title, output, reprompt_text, should_end_session):
         },
         'card': {
             'type': 'Simple',
-            'title': "SessionSpeechlet - " + title,
-            'content': "SessionSpeechlet - " + output
+            'title': "SousChef - " + title,
+            'content': output
         },
         'reprompt': {
             'outputSpeech': {
@@ -43,16 +43,6 @@ def build_response(session_attributes, speechlet_response):
 
 # --------------- Helpers  ----------------------
 
-def get_current_meal():
-    curr_time = datetime.now()
-    if 4 < curr_time.hour < 12:
-        return curr_time.weekday(), "Breakfast"
-    elif 12 < curr_time.hour < 17:
-        return curr_time.weekday(), "Lunch"
-    else:
-        return curr_time.weekday(), "Dinner"
-
-
 def get_recipe_details(day, meal_type, user_id=1):
     recipe = fb.get('/users/{}/weekly_plan/{}/{}'.format(user_id, day, meal_type), None)
     return recipe
@@ -65,12 +55,12 @@ def get_recipe_instructions(recipe_id):
     return instructions
 
 
-def get_recipe(user_id=1):
-    day, meal_type = get_current_meal()
+def get_recipe(meal_type, user_id=1):
+    day = datetime.now().weekday()
     recipe_details = get_recipe_details(day, meal_type, user_id)
     instructions = get_recipe_instructions(recipe_details["ID"])
 
-    return recipe_details["ID"], recipe_details["Name"], instructions, meal_type
+    return recipe_details["ID"], recipe_details["Name"], instructions
 
 
 def get_next_step(steps, current_step):
@@ -111,30 +101,45 @@ def handle_session_end_request(session):
         current_recipe_id = session["attributes"]["current_recipe_id"]
         current_step = session["attributes"]["current_step"]
         save_state(current_recipe_id, current_step)
+    session_attributes = {}
+    speech_response = "Okay! I've saved your progress. Just say next or repeat when you want to resume."
+    return build_response(session_attributes, build_speechlet_response("Stopped", speech_response, None, True))
 
 
-def handle_recipe_end():
+def handle_recipe_end(session_attributes, user_id=1):
+    delete_state(user_id)
     card_title = "Bon Appetit"
-    speech_output = "Enjoy your food!"
+    speech_output = "You're all done! Enjoy your food!"
     should_end_session = True
-    return build_response({}, build_speechlet_response(
+    return build_response(session_attributes, build_speechlet_response(
         card_title, speech_output, None, should_end_session))
 
 
-def handle_start_cooking(session):
+def handle_start_cooking(intent, session):
     should_end_session = False
     reprompt_text = None
+    session_attributes = {}
 
     # alexa_uid = session["user"]["userId"]
-    recipe_id, recipe_name, recipe_steps, meal_type = get_recipe()
+    if "value" not in intent["slots"]["MealType"]:
+        speech_response = "Do you want Breakfast, Lunch, or Dinner?"
+        reprompt_text = speech_response
+        return build_response(session_attributes,
+                              build_speechlet_response("Which meal do you want to cook?", speech_response,
+                                                       reprompt_text, should_end_session))
+
+    meal_type = intent["slots"]["MealType"]["value"].capitalize()
+
+    recipe_id, recipe_name, recipe_steps = get_recipe(meal_type)
 
     session_attributes = {"current_recipe_id": recipe_id,
                           "current_recipe_steps": recipe_steps,
                           "current_step": 0}
 
+    save_state(recipe_id, 0)
     speech_response = "Ok! For {} we're making {}. Say next to get the first step".format(meal_type, recipe_name)
 
-    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+    return build_response(session_attributes, build_speechlet_response("Let's start!", speech_response,
                                                                        reprompt_text, should_end_session))
 
 
@@ -162,12 +167,77 @@ def handle_next_step(session):
                                   "current_step": current_step}
 
     if current_step >= len(current_recipe_steps):
-        delete_state()
-
-        return handle_recipe_end()
+        return handle_recipe_end(session_attributes)
 
     speech_response = get_next_step(current_recipe_steps, current_step)
     session_attributes["current_step"] += 1
+    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+                                                                       reprompt_text, should_end_session))
+
+
+def handle_repeat_step(session):
+    session_attributes = {}
+    should_end_session = False
+    reprompt_text = None
+    # alexa_uid = session["user"]["userId"]
+
+    if "current_recipe_id" in session.get("attributes", {}):
+        current_recipe_steps = session["attributes"]["current_recipe_steps"]
+        current_step = session["attributes"]["current_step"]
+        session_attributes = session["attributes"]
+    else:
+        current_recipe = load_state()
+        if current_recipe is None:
+            speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
+            return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
+                                                                               reprompt_text, should_end_session))
+        else:
+            current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
+            current_step = current_recipe['step']
+            session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
+                                  "current_recipe_steps": current_recipe_steps,
+                                  "current_step": current_step}
+
+    current_step -= 1
+
+    if current_step < 0:
+        current_step = 0
+
+    session_attributes["current_step"] = current_step + 1
+    speech_response = get_next_step(current_recipe_steps, current_step)
+    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+                                                                       reprompt_text, should_end_session))
+
+
+def handle_previous_step(session):
+    session_attributes = {}
+    should_end_session = False
+    reprompt_text = None
+    # alexa_uid = session["user"]["userId"]
+
+    if "current_recipe_id" in session.get("attributes", {}):
+        current_recipe_steps = session["attributes"]["current_recipe_steps"]
+        current_step = session["attributes"]["current_step"]
+        session_attributes = session["attributes"]
+    else:
+        current_recipe = load_state()
+        if current_recipe is None:
+            speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
+            return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
+                                                                               reprompt_text, should_end_session))
+        else:
+            current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
+            current_step = current_recipe['step']
+            session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
+                                  "current_recipe_steps": current_recipe_steps,
+                                  "current_step": current_step}
+
+    current_step -= 2
+
+    if current_step < 0:
+        current_step = 0
+    session_attributes["current_step"] = current_step + 1
+    speech_response = get_next_step(current_recipe_steps, current_step)
     return build_response(session_attributes, build_speechlet_response("Success", speech_response,
                                                                        reprompt_text, should_end_session))
 
@@ -203,9 +273,13 @@ def on_intent(intent_request, session):
 
     # Dispatch to your skill's intent handlers
     if intent_name == "StartCookingIntent":
-        return handle_start_cooking(session)
+        return handle_start_cooking(intent, session)
     elif intent_name == "NextStepIntent":
         return handle_next_step(session)
+    elif intent_name == "RepeatStepIntent":
+        return handle_repeat_step(session)
+    elif intent_name == "PreviousStepIntent":
+        return handle_previous_step(session)
     elif intent_name == "AMAZON.HelpIntent":
         return get_welcome_response()
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
@@ -215,7 +289,7 @@ def on_intent(intent_request, session):
 
 
 def on_session_ended(session_ended_request, session):
-    """ Called when the user ends the session.
+    """ Called when the session times out.
 
     Is not called when the skill returns should_end_session=true
     """
