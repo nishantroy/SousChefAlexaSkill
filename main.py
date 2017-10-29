@@ -44,9 +44,9 @@ def build_response(session_attributes, speechlet_response):
 
 def get_current_meal():
     curr_time = datetime.now()
-    if curr_time.hour < 12:
+    if 4 < curr_time.hour < 12:
         return curr_time.weekday(), "Breakfast"
-    elif curr_time.hour < 16:
+    elif 12 < curr_time.hour < 17:
         return curr_time.weekday(), "Lunch"
     else:
         return curr_time.weekday(), "Dinner"
@@ -69,7 +69,7 @@ def get_recipe(user_id=1):
     recipe_details = get_recipe_details(day, meal_type, user_id)
     instructions = get_recipe_instructions(recipe_details["ID"])
 
-    return recipe_details["ID"], recipe_details["Name"], instructions
+    return recipe_details["ID"], recipe_details["Name"], instructions, meal_type
 
 
 def get_next_step(steps, current_step):
@@ -125,15 +125,13 @@ def handle_start_cooking(session):
     reprompt_text = None
 
     # alexa_uid = session["user"]["userId"]
-    recipe_id, recipe_name, recipe_steps = get_recipe()
+    recipe_id, recipe_name, recipe_steps, meal_type = get_recipe()
 
     session_attributes = {"current_recipe_id": recipe_id,
                           "current_recipe_steps": recipe_steps,
                           "current_step": 0}
 
-    speech_response = get_next_step(recipe_steps, 0)
-
-    session_attributes["current_step"] += 1
+    speech_response = "Ok! For {} we're making {}. Say next to get the first step".format(meal_type, recipe_name)
 
     return build_response(session_attributes, build_speechlet_response("Success", speech_response,
                                                                        reprompt_text, should_end_session))
