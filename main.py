@@ -55,6 +55,14 @@ def get_recipe_instructions(recipe_id):
     return instructions
 
 
+def get_ingredients(recipe_id):
+    url = "{}/api/v1/recipes/recipe_details?recipe_id={}".format(souschef_url, recipe_id)
+    print "URL: {}".format(url)
+    r = requests.get(url)
+    ingredients = r.json()['extendedIngredients']
+    return ingredients
+
+
 def get_recipe(meal_type, user_id=1):
     day = datetime.now().weekday()
     recipe_details = get_recipe_details(day, meal_type, user_id)
@@ -71,15 +79,20 @@ def get_next_step(steps, current_step):
 
 
 def save_state(recipe_id, step, user_id=1):
-    fb.put('alexa/', user_id, {'recipe_id': recipe_id, 'step': step})
+    url = "{}/api/v1/users/save_current_recipe_progress?" \
+          "user_id={}&recipe_id={}&step={}".format(souschef_url, user_id, recipe_id, step)
+    requests.get(url)
 
 
 def load_state(user_id=1):
-    return fb.get('alexa/{}'.format(user_id), None)
+    url = "{}/api/v1/users/get_current_recipe_progress?user_id={}".format(souschef_url, user_id)
+    r = requests.get(url)
+    return r.json()
 
 
 def delete_state(user_id=1):
-    return fb.put('alexa/', user_id, {})
+    url = "{}/api/v1/users/delete_current_recipe_progress?user_id={}".format(souschef_url, user_id)
+    requests.get(url)
 
 
 # --------------- Functions that control the skill's behavior ------------------
@@ -149,7 +162,7 @@ def handle_next_step(session):
     reprompt_text = None
     # alexa_uid = session["user"]["userId"]
 
-    if "current_recipe_id" in session.get("attributes", {}):
+    if "current_recipe_steps" in session.get("attributes", {}):
         current_recipe_steps = session["attributes"]["current_recipe_steps"]
         current_step = session["attributes"]["current_step"]
         session_attributes = session["attributes"]
@@ -159,19 +172,18 @@ def handle_next_step(session):
             speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
             return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
                                                                                reprompt_text, should_end_session))
-        else:
-            current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
-            current_step = current_recipe['step']
-            session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
-                                  "current_recipe_steps": current_recipe_steps,
-                                  "current_step": current_step}
+        current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
+        current_step = current_recipe['step']
+        session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
+                              "current_recipe_steps": current_recipe_steps,
+                              "current_step": current_step}
 
     if current_step >= len(current_recipe_steps):
         return handle_recipe_end(session_attributes)
 
     speech_response = get_next_step(current_recipe_steps, current_step)
     session_attributes["current_step"] += 1
-    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+    return build_response(session_attributes, build_speechlet_response("Next Step", speech_response,
                                                                        reprompt_text, should_end_session))
 
 
@@ -181,7 +193,7 @@ def handle_repeat_step(session):
     reprompt_text = None
     # alexa_uid = session["user"]["userId"]
 
-    if "current_recipe_id" in session.get("attributes", {}):
+    if "current_recipe_steps" in session.get("attributes", {}):
         current_recipe_steps = session["attributes"]["current_recipe_steps"]
         current_step = session["attributes"]["current_step"]
         session_attributes = session["attributes"]
@@ -191,12 +203,11 @@ def handle_repeat_step(session):
             speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
             return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
                                                                                reprompt_text, should_end_session))
-        else:
-            current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
-            current_step = current_recipe['step']
-            session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
-                                  "current_recipe_steps": current_recipe_steps,
-                                  "current_step": current_step}
+        current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
+        current_step = current_recipe['step']
+        session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
+                              "current_recipe_steps": current_recipe_steps,
+                              "current_step": current_step}
 
     current_step -= 1
 
@@ -205,7 +216,7 @@ def handle_repeat_step(session):
 
     session_attributes["current_step"] = current_step + 1
     speech_response = get_next_step(current_recipe_steps, current_step)
-    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+    return build_response(session_attributes, build_speechlet_response("Repeat Step", speech_response,
                                                                        reprompt_text, should_end_session))
 
 
@@ -215,7 +226,7 @@ def handle_previous_step(session):
     reprompt_text = None
     # alexa_uid = session["user"]["userId"]
 
-    if "current_recipe_id" in session.get("attributes", {}):
+    if "current_recipe_steps" in session.get("attributes", {}):
         current_recipe_steps = session["attributes"]["current_recipe_steps"]
         current_step = session["attributes"]["current_step"]
         session_attributes = session["attributes"]
@@ -225,12 +236,11 @@ def handle_previous_step(session):
             speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
             return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
                                                                                reprompt_text, should_end_session))
-        else:
-            current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
-            current_step = current_recipe['step']
-            session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
-                                  "current_recipe_steps": current_recipe_steps,
-                                  "current_step": current_step}
+        current_recipe_steps = get_recipe_instructions(current_recipe['recipe_id'])
+        current_step = current_recipe['step']
+        session_attributes = {"current_recipe_id": current_recipe['recipe_id'],
+                              "current_recipe_steps": current_recipe_steps,
+                              "current_step": current_step}
 
     current_step -= 2
 
@@ -238,10 +248,30 @@ def handle_previous_step(session):
         current_step = 0
     session_attributes["current_step"] = current_step + 1
     speech_response = get_next_step(current_recipe_steps, current_step)
-    return build_response(session_attributes, build_speechlet_response("Success", speech_response,
+    return build_response(session_attributes, build_speechlet_response("Previous Step", speech_response,
                                                                        reprompt_text, should_end_session))
 
 
+def handle_ingredient_list(session):
+    session_attributes = {}
+    should_end_session = False
+    reprompt_text = None
+
+    if "current_recipe_id" in session.get("attributes", {}):
+        current_recipe_id = session["attributes"]["current_recipe_id"]
+        session_attributes = session["attributes"]
+    else:
+        current_recipe = load_state()
+        if current_recipe is None:
+            speech_response = "Sorry, there is no ongoing recipe. Try saying Start Cooking."
+            return build_response(session_attributes, build_speechlet_response("Failure", speech_response,
+                                                                               reprompt_text, should_end_session))
+        current_recipe_id = current_recipe['recipe_id']
+
+    current_recipe_ingredients = get_ingredients(current_recipe_id)
+    speech_response = ", ".join([ingredient['originalString'] for ingredient in current_recipe_ingredients])
+    return build_response(session_attributes, build_speechlet_response("Ingredients", speech_response,
+                                                                       reprompt_text, should_end_session))
 # --------------- Events ------------------
 
 def on_session_started(session_started_request, session):
@@ -280,6 +310,8 @@ def on_intent(intent_request, session):
         return handle_repeat_step(session)
     elif intent_name == "PreviousStepIntent":
         return handle_previous_step(session)
+    elif intent_name == "IngredientListIntent":
+        return handle_ingredient_list(session)
     elif intent_name == "AMAZON.HelpIntent":
         return get_welcome_response()
     elif intent_name == "AMAZON.CancelIntent" or intent_name == "AMAZON.StopIntent":
