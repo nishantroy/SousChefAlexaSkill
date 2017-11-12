@@ -272,6 +272,8 @@ def handle_ingredient_list(session):
     speech_response = ", ".join([ingredient['originalString'] for ingredient in current_recipe_ingredients])
     return build_response(session_attributes, build_speechlet_response("Ingredients", speech_response,
                                                                        reprompt_text, should_end_session))
+
+
 # --------------- Events ------------------
 
 def on_session_started(session_started_request, session):
